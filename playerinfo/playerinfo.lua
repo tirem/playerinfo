@@ -26,7 +26,7 @@ addon.name      = 'playerinfo';
 addon.author    = 'Tirem';
 addon.version   = '1.0';
 addon.desc      = 'Displays information bars about the player.';
-addon.link      = 'https://ashitaxi.com/';
+addon.link      = 'https://github.com/tirem/playerinfo'
 
 require('common');
 local imgui = require('imgui');
