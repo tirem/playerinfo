@@ -36,12 +36,18 @@ local imgui = require('imgui');
 local fonts = require('fonts');
 local settings = require('settings');
 
+local interpolatedHP = 0;
+local lastHP = 0;
+local lastHitTime = os.clock();
+
 local hpText;
 local mpText;
 local tpText;
 
 local default_settings =
 T{
+	hitAnimSpeed = 5;
+	hitDelayLength = .5;
 	barWidth = 600;
 	barSpacing = 10;
 	barHeight = 25;
@@ -94,6 +100,33 @@ local function UpdateTextVisibility(visible)
 	tpText:SetVisible(visible);
 end
 
+local function UpdateHealthValue()
+	local party     = AshitaCore:GetMemoryManager():GetParty();
+    local player    = AshitaCore:GetMemoryManager():GetPlayer();
+	
+	if (party == nil or player == nil) then
+		return;
+	end
+	
+	local SelfHP = party:GetMemberHP(0);
+	
+	if (SelfHP > lastHP) then
+		-- if our HP went up just show it immediately
+		targetHP = SelfHP;
+		interpolatedHP = SelfHP;
+		lastHP = SelfHP;
+	elseif (SelfHP < lastHP) then
+		-- if our HP went down make it a new interpolation target
+		interpolatedHP = lastHP;
+		lastHP = SelfHP;
+		lastHitTime = os.clock();
+	end
+	
+	if (interpolatedHP > SelfHP and os.clock() > lastHitTime + config.hitDelayLength) then
+		interpolatedHP = interpolatedHP - config.hitAnimSpeed;
+	end
+end
+
 --[[
 * event: d3d_present
 * desc : Event called when the Direct3D device is presenting a scene.
@@ -113,6 +146,8 @@ ashita.events.register('d3d_present', 'present_cb', function ()
         return;
 	end
 
+	UpdateHealthValue();
+
 	-- Draw the player window
     imgui.SetNextWindowSize({ config.barWidth + config.barSpacing * 2, -1, }, ImGuiCond_Always);
 		
@@ -121,27 +156,52 @@ ashita.events.register('d3d_present', 'present_cb', function ()
 		local SelfHP = party:GetMemberHP(0);
 		local SelfHPMax = player:GetHPMax();
 		local SelfHPPercent = SelfHP / SelfHPMax;
+		local interpHP = interpolatedHP / SelfHPMax;
 		local SelfMP = party:GetMemberMP(0);
 		local SelfMPMax = player:GetMPMax();
 		local SelfTP = party:GetMemberTP(0);
 
-		-- Draw the bars for the players info and save the locations
-		-- TODO: Make the colors configurable
-		imgui.PushStyleColor(ImGuiCol_PlotHistogram, {1, .4, .4, 1});
-		imgui.ProgressBar(SelfHPPercent, { config.barWidth / 3 - config.barSpacing, config.barHeight }, '');
+		-- Draw HP Bar (two bars to fake animation
+		local hpX = imgui.GetCursorPosX();
+		imgui.PushStyleColor(ImGuiCol_PlotHistogram, {1, .1, .1, 1});
+		imgui.ProgressBar(interpHP, { config.barWidth / 3 - config.barSpacing, config.barHeight }, '');
 		imgui.PopStyleColor(1);
 		imgui.SameLine();
-		local hpLocX, hpLocY = imgui.GetCursorScreenPos();
-		imgui.SetCursorPosX(imgui.GetCursorPosX() + config.barSpacing);
-		imgui.PushStyleColor(ImGuiCol_PlotHistogram, {.8, 1, .4, 1});
+		local hpEndX = imgui.GetCursorPosX();
+		local hpLocX, hpLocY = imgui.GetCursorScreenPos();			
+		if (SelfHPPercent > 0) then
+			imgui.SetCursorPosX(hpX);
+			imgui.PushStyleColor(ImGuiCol_PlotHistogram, {1, .4, .4, 1});
+			imgui.ProgressBar(1, { (config.barWidth / 3 - config.barSpacing) * SelfHPPercent, config.barHeight }, '');
+			imgui.PopStyleColor(1);
+			imgui.SameLine();
+		end
+		
+		-- Draw MP Bar
+		imgui.SetCursorPosX(hpEndX + config.barSpacing);
+		imgui.PushStyleColor(ImGuiCol_PlotHistogram, {.9, 1, .5, 1});
 		imgui.ProgressBar(SelfMP / SelfMPMax, { config.barWidth / 3 - config.barSpacing, config.barHeight }, '');
 		imgui.PopStyleColor(1);
 		imgui.SameLine();
 		local mpLocX, mpLocY  = imgui.GetCursorScreenPos()
+		
+		-- Draw TP Bars
+		local tpX = imgui.GetCursorPosX();
 		imgui.SetCursorPosX(imgui.GetCursorPosX() + config.barSpacing);
-		imgui.PushStyleColor(ImGuiCol_PlotHistogram, {.4, .4, 1, 1});
-		imgui.ProgressBar(SelfTP / 3000, { config.barWidth / 3 - config.barSpacing, config.barHeight }, '');
+		if (SelfTP > 1000) then
+			imgui.PushStyleColor(ImGuiCol_PlotHistogram, {.2, .4, 1, 1});
+		else
+			imgui.PushStyleColor(ImGuiCol_PlotHistogram, {.3, .7, 1, 1});
+		end
+		imgui.ProgressBar(SelfTP / 1000, { config.barWidth / 3 - config.barSpacing, config.barHeight }, '');
 		imgui.PopStyleColor(1);
+		if (SelfTP > 1000) then
+			imgui.SameLine();
+			imgui.SetCursorPosX(tpX + config.barSpacing);
+			imgui.PushStyleColor(ImGuiCol_PlotHistogram, {.3, .7, 1, 1});
+			imgui.ProgressBar((SelfTP - 1000) / 2000, { config.barWidth / 3 - config.barSpacing, config.barHeight * 3/5 }, '');
+			imgui.PopStyleColor(1);
+		end
 		imgui.SameLine();
 		local tpLocX, tpLocY  = imgui.GetCursorScreenPos();
 		
@@ -174,7 +234,7 @@ ashita.events.register('d3d_present', 'present_cb', function ()
 		tpText:SetPositionY(tpLocY + config.barHeight + config.textYOffset);
 		tpText:SetText(tostring(SelfTP));
 		if (SelfTP > 1000) then 
-			tpText:SetColor(0xFF3C89D0);
+			tpText:SetColor(0xFF5b97cf);
 		else
 			tpText:SetColor(0xFFD1EDF2);
 	    end	
@@ -189,4 +249,16 @@ ashita.events.register('load', 'load_cb', function ()
     hpText = fonts.new(config.font_settings);
 	mpText = fonts.new(config.font_settings);
 	tpText = fonts.new(config.font_settings);
+end);
+
+ashita.events.register('command', 'command_cb', function (ee)
+    -- Parse the command arguments
+    local args = ee.command:args();
+    if (#args == 0 or args[1] ~= '/playerinfo') then
+        return;
+    end
+
+    -- Block all targetinfo related commands
+    ee.blocked = true;
+
 end);
