@@ -43,10 +43,11 @@ local lastHitTime = os.clock();
 local hpText;
 local mpText;
 local tpText;
+local resetPosNextFrame = false;
 
 local default_settings =
 T{
-	hitAnimSpeed = 5;
+	hitAnimSpeed = 2;
 	hitDelayLength = .5;
 	barWidth = 600;
 	barSpacing = 10;
@@ -109,6 +110,7 @@ local function UpdateHealthValue()
 	end
 	
 	local SelfHP = party:GetMemberHP(0);
+	local SelfHPMax = player:GetHPMax();
 	
 	if (SelfHP > lastHP) then
 		-- if our HP went up just show it immediately
@@ -123,7 +125,7 @@ local function UpdateHealthValue()
 	end
 	
 	if (interpolatedHP > SelfHP and os.clock() > lastHitTime + config.hitDelayLength) then
-		interpolatedHP = interpolatedHP - config.hitAnimSpeed;
+		interpolatedHP = interpolatedHP - (config.hitAnimSpeed * (SelfHPMax / 100));
 	end
 end
 
@@ -149,6 +151,11 @@ ashita.events.register('d3d_present', 'present_cb', function ()
 	UpdateHealthValue();
 
 	-- Draw the player window
+	if (resetPosNextFrame) then
+		imgui.SetNextWindowPos({0,0});
+		resetPosNextFrame = false;
+	end
+	
     imgui.SetNextWindowSize({ config.barWidth + config.barSpacing * 2, -1, }, ImGuiCond_Always);
 		
     if (imgui.Begin('PlayerInfo', true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
@@ -261,4 +268,12 @@ ashita.events.register('command', 'command_cb', function (ee)
     -- Block all targetinfo related commands
     ee.blocked = true;
 
+	-- reset to default pos
+	if (#args == 2 and args[2]:any('reset')) then
+		resetPosNextFrame = true;
+		return;
+	end
+	
+	print('PlayerInfo: PLAYERINFO COMMANDS');
+	print('PlayerInfo: /playerinfo reset - Resets position to 0,0');
 end);
